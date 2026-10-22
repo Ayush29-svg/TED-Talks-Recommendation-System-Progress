@@ -1,130 +1,134 @@
-# Personalized TED Talks Recommendation System Using Machine Learning
+# Personalized TED Talks Recommendation System
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/Milestone%201-Completed-success.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
+A machine learning project designed to recommend relevant TED Talks based on content similarity (transcripts, tags, talk descriptions) and collaborative user engagement signals.
 
----
-
-## 1. Project Statement
-With an ever-growing repository of TED Talks covering diverse subjects—from artificial intelligence and biotechnology to design, psychology, and global issues—users struggle to efficiently discover talks aligned with their interests. 
-
-This project develops an intelligent, machine learning–powered recommendation system combining **Content-Based Filtering** (leveraging talk transcripts, metadata, and tags) and **Collaborative Filtering** (leveraging user interaction patterns and preferences). The final deliverable will be deployed via an interactive **Streamlit** web application.
+Developed as part of the Springboard Internship Program.
 
 ---
 
-## 2. Milestone 1 (Week 1-2) Implementation Summary
+## Project Overview
+
+With thousands of TED Talks spanning diverse topics—such as technology, science, design, psychology, and global issues—it can be challenging for viewers to find talks matching their specific interests. 
+
+This project aims to build a hybrid recommendation engine combining:
+1. **Content-Based Filtering**: Recommends talks with similar subjects, transcripts, tags, and speakers using natural language processing.
+2. **Collaborative Filtering**: Suggests talks based on user watch histories, ratings, and shared interest profiles.
+3. **Streamlit Web Application**: An interactive interface allowing users to explore recommendations and filter by topic or speaker.
+
+---
+
+## Milestone 1: Data Collection & Data Preprocessing (Week 1–2)
 
 ### Module 1: Data Collection
-- **Source**: Canonical TED Talks archive and transcripts repository.
-- **Data Volume**:
-  - `ted_main.csv`: **2,628** talks with 17 metadata fields.
-  - `transcripts.csv`: **2,542** verbatim transcripts.
-- **Richness**:
-  - Over **2,228 unique speakers** and **1,513 distinct professions**.
-  - **423 unique topic tags** spanning interdisciplinary domains.
-  - **Over 4.5 million community ratings** across 14 emotional and cognitive feedback dimensions.
+- **Metadata (`ted_main.csv`)**: 2,628 talks containing 17 fields including title, speaker, speaker occupation, tags, views, comments, duration, publication date, and community ratings.
+- **Transcripts (`transcripts.csv`)**: 2,542 full verbatim transcripts mapped to talks by URL.
+- **Dataset Diversity**: Spans over 2,228 unique speakers, 1,513 occupations, and 423 unique topic tags.
 
-### Module 2: Data Exploration & Data Preprocessing
-- **Data Inspection & Cleaning**:
-  - Handled encoding nuances (`latin1` for metadata, UTF-8 with error replacement for international transcripts).
-  - Merged talk metadata and transcripts on unique `url` identifiers.
-  - Resolved missing transcripts (86 talks) by imputing title and description to preserve complete catalog coverage.
-  - Resolved missing `speaker_occupation` (6 records) with `'Unknown'`.
-  - Achieved **0 missing values** across the final 43-column dataset.
-- **Text Normalization Pipeline**:
-  - Stripped transcript sound cues (e.g., `(Laughter)`, `(Applause)`, `[Music]`).
-  - Standardized to lowercase, removed special characters/punctuation.
-  - Filtered English stopwords using scikit-learn's vetted lexicon.
-  - Constructed enriched **`content_soup`** integrating title, speaker, occupation, tags, and cleaned description for downstream vectorization.
-- **Feature Engineering & Similarity Metrics**:
-  - `duration_minutes`: Talk length in minutes (mean: 13.73 mins, median: 14.06 mins).
-  - `transcript_word_count`: Word count per talk (mean: 1,955 words).
+### Module 2: Data Exploration & Preprocessing
+- **Handling Missing Data**:
+  - Imputed missing transcripts (86 talks) using talk titles and descriptions to ensure 100% catalog coverage for recommendation models.
+  - Filled missing speaker occupations (6 talks) with `"Unknown"`.
+  - Zero missing values in the final processed dataset (43 columns).
+- **Text Normalization**:
+  - Stripped transcript sound cues such as `(Laughter)`, `(Applause)`, and `[Music]`.
+  - Converted text to lowercase, removed special characters, punctuation, and URLs.
+  - Filtered common English stopwords using scikit-learn's stopword dictionary.
+  - Built an aggregated `content_soup` feature combining title, speaker, occupation, tags, and description for vectorization in Milestone 2.
+- **Feature Engineering**:
+  - `duration_minutes`: Duration in minutes (mean: 13.73 mins, median: 14.06 mins).
+  - `transcript_word_count`: Word count per transcript (mean: 1,955 words).
   - `words_per_minute`: Speaking rate pacing metric.
-  - `views_per_comment`: Audience interaction density ratio.
-  - `tag_count`: Tag diversity metric (mean: 7.57 tags per talk).
-  - `dominant_sentiment`: Primary emotional response from community voting.
-- **Collaborative Filtering Setup**:
-  - Extracted `talk_ratings_matrix.csv` with community voting distributions across all 14 TED rating attributes.
-  - Generated `user_item_interactions.csv` representing **18,323 interactions** across **500 diverse user profiles** with 98.6% matrix sparsity, formatted for Matrix Factorization (SVD/ALS) in Milestone 2.
-- **Visualizations**:
-  - Generated 8 publication-grade distribution plots and correlation heatmaps saved to `eda_visualizations/`.
+  - `views_per_comment`: Audience discussion ratio.
+  - `tag_count`: Number of assigned topic tags (mean: 7.57 tags per talk).
+  - `dominant_sentiment`: Most frequent community rating sentiment (e.g., Inspiring, Informative, Fascinating).
+- **Collaborative Filtering Preparation**:
+  - Extracted community rating distributions into `talk_ratings_matrix.csv`.
+  - Generated a benchmark user-item interaction log (`user_item_interactions.csv`) with 18,323 ratings across 500 user profiles representing various interest groups (technology, science, arts, global issues, business, psychology).
 
 ---
 
-## 3. Repository Architecture
+## Key Exploratory Findings
+
+1. **Talk Durations**: Most talks adhere closely to the classic 15–18 minute TED window, with a median duration of 14.06 minutes.
+2. **Top Topic Tags**: The most frequent tags are `technology` (727), `science` (567), `global issues` (501), `culture` (486), `design` (418), and `business` (348).
+3. **Audience Engagement**: Talk views and comments follow a right-skewed log-normal distribution. While median views are ~1.11 million, top talks reach over 40 million views.
+4. **Community Feedback**: The most common audience reactions across talks are *Inspiring* (2.1M+ votes), *Informative* (1.8M+ votes), and *Fascinating* (1.5M+ votes).
+
+Visualizations generated during EDA can be found in the [`eda_visualizations/`](eda_visualizations/) directory.
+
+---
+
+## Repository Structure
 
 ```text
-C:\Drivers\
-├── data\
-│   ├── raw\
-│   │   ├── ted_main.csv                     # Original metadata (2,628 talks)
-│   │   └── transcripts.csv                  # Original transcripts (2,542 talks)
-│   └── processed\
-│       ├── ted_talks_cleaned.csv            # Cleaned master dataset (43 features)
-│       ├── user_item_interactions.csv       # User-item rating interaction benchmark
-│       ├── talk_ratings_matrix.csv          # Community ratings per talk (14 dimensions)
-│       └── data_summary_stats.json          # Data quality and summary statistics
-├── eda_visualizations\
-│   ├── talk_duration_distribution.png       # Duration distribution (mean/median)
-│   ├── top_25_tags_distribution.png         # Frequency of top 25 topic tags
-│   ├── views_and_comments_distribution.png  # Log-scale views & comments reach
-│   ├── rating_categories_distribution.png   # Millions of votes across 14 feedback types
-│   ├── transcript_word_count_distribution.png # Word count & speaking rate (WPM)
-│   ├── feature_correlation_matrix.png       # Correlation matrix of numerical features
-│   ├── top_speakers_and_occupations.png     # Distribution of top speakers & jobs
-│   └── user_interaction_ratings_distribution.png # Collaborative ratings (1-5 stars)
-├── notebooks\
-│   └── Milestone_1_EDA_and_Preprocessing.ipynb # Interactive demonstration notebook
-├── src\
-│   ├── data_collection.py                   # Automated raw data ingestion script
-│   ├── data_preprocessing.py                # Preprocessing, text cleaning & matrix prep
-│   ├── eda_analysis.py                      # EDA plotting and visualization generation
-│   ├── create_notebook.py                   # Notebook generator
-│   └── run_milestone1.py                    # Master end-to-end execution runner
-└── README.md
+├── data/
+│   ├── raw/
+│   │   ├── ted_main.csv                     # Original talk metadata
+│   │   └── transcripts.csv                  # Original verbatim transcripts
+│   └── processed/
+│       ├── ted_talks_cleaned.csv            # Cleaned dataset (43 features)
+│       ├── user_item_interactions.csv       # User interaction matrix for collaborative filtering
+│       ├── talk_ratings_matrix.csv          # Community ratings per talk across 14 categories
+│       └── data_summary_stats.json          # Data quality summary metrics
+├── eda_visualizations/                      # EDA charts and distribution plots
+├── notebooks/
+│   └── Milestone_1_EDA_and_Preprocessing.ipynb # Step-by-step EDA notebook
+├── src/
+│   ├── data_collection.py                   # Dataset ingestion script
+│   ├── data_preprocessing.py                # Preprocessing and text cleaning pipeline
+│   ├── eda_analysis.py                      # Exploratory plotting script
+│   └── run_milestone1.py                    # Pipeline runner
+├── requirements.txt                         # Python dependencies
+├── LICENSE                                  # MIT License
+└── README.md                                # Project documentation
 ```
 
 ---
 
-## 4. Key EDA Insights
+## Getting Started
 
-1. **Duration Norms**: TED talks center tightly around the classic 15–18 minute format (median: 14.06 mins; mean: 13.73 mins). Short talks (~3–5 minutes) and extended talks (>30 minutes) form distinct tails.
-2. **Topic Diversity**: Top tags are led by `technology`, `science`, `global issues`, `culture`, `design`, and `business`, reflecting strong potential for thematic cluster discovery.
-3. **Engagement Dynamics**: Both Views and Comments follow a log-normal distribution with long right tails. The most viewed talks exceed 40M+ views, while median reach is ~1.11M views.
-4. **Dominant Sentiment Dimensions**: Community votes overwhelmingly classify top talks as *Inspiring* (2.1M+ votes), *Informative* (1.8M+ votes), and *Fascinating* (1.5M+ votes).
-5. **Speaking Rate**: Most speakers deliver talks at an average rate of 130–165 words per minute.
-
----
-
-## 5. How to Run the Pipeline
-
-### Prerequisites
-Ensure Python 3.10+ and required packages are installed:
-```powershell
-pip install pandas scikit-learn matplotlib seaborn nltk
+### 1. Clone the repository
+```bash
+git clone https://github.com/Ayush29-svg/TED-Talks-Recommendation-System-Progress.git
+cd TED-Talks-Recommendation-System-Progress
 ```
 
-### Run Entire Milestone 1 Pipeline
-To run data collection, cleaning, feature engineering, and visualization generation:
-```powershell
+### 2. Set up virtual environment & install requirements
+```bash
+python -m venv venv
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### 3. Run the Milestone 1 Pipeline
+To re-run data collection, cleaning, and chart generation:
+```bash
 python src/run_milestone1.py
 ```
 
-### Inspect Output Files
-- Preprocessed dataset: `data/processed/ted_talks_cleaned.csv`
-- Quality statistics: `data/processed/data_summary_stats.json`
-- Visualization charts: `eda_visualizations/*.png`
-- Notebook: `notebooks/Milestone_1_EDA_and_Preprocessing.ipynb`
+### 4. Open the Jupyter Notebook
+```bash
+jupyter notebook notebooks/Milestone_1_EDA_and_Preprocessing.ipynb
+```
 
 ---
 
-## 6. Next Steps: Milestone 2 Preview (Week 3-4)
+## Next Steps: Milestone 2 (Week 3–4)
+
 - **Module 3: Feature Engineering and Vectorization**:
-  - TF-IDF vectorization on `content_soup` and transcripts.
-  - Word2Vec / BERT dense embeddings for semantic search.
-  - Sparse representation of user-item interaction matrix.
-- **Module 4: Develop Recommendation Engine**:
-  - Cosine similarity content-based recommender.
-  - Collaborative filtering via Matrix Factorization (SVD / TruncatedSVD / ALS).
-  - Hybrid scoring architecture combining content similarity and user affinities.
+  - Implement TF-IDF vectorization and word/sentence embeddings on `content_soup` and transcripts.
+  - Construct sparse user-item interaction matrices for collaborative filtering.
+- **Module 4: Recommendation Engine Development**:
+  - Develop content-based similarity models using cosine similarity.
+  - Implement collaborative filtering using Matrix Factorization (SVD / ALS).
+  - Design a hybrid recommendation model combining content and user preferences.
+
+---
+
+## Author
+**Ayush Gupta**  
+GitHub: [@Ayush29-svg](https://github.com/Ayush29-svg)

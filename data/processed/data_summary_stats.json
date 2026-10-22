@@ -18,7 +18,7 @@
     "transcript_words_median": 1953.5,
     "tags_per_talk_mean": 7.572678843226789,
     "collaborative_users_count": 500,
-    "collaborative_interactions_count": 18323,
-    "collaborative_interaction_sparsity_pct": 98.60555555555555,
+    "collaborative_interactions_count": 17311,
+    "collaborative_interaction_sparsity_pct": 98.68257229832572,
     "missing_values_after_cleaning": {}
 }

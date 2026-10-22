@@ -1,3 +1,8 @@
+"""
+Module 2: Data Preprocessing
+Cleans metadata and transcripts, handles missing values, engineers text
+features, and generates interaction matrices for recommendation models.
+"""
 import os
 import re
 import ast
@@ -5,7 +10,6 @@ import json
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,39 +19,31 @@ RAW_DIR = os.path.join(BASE_DIR, 'data', 'raw')
 PROCESSED_DIR = os.path.join(BASE_DIR, 'data', 'processed')
 
 def clean_text(text: str, remove_stopwords: bool = True) -> str:
-    """
-    Cleans raw text data:
-    1. Removes transcript cues such as (Laughter), (Applause), [Music], etc.
-    2. Lowercases text
-    3. Removes URLs, non-alphabet characters, and excessive whitespace
-    4. Optionally removes stopwords
-    """
+    """Clean text by removing laughter/applause cues, URLs, punctuation, and extra whitespace."""
     if not isinstance(text, str) or not text.strip():
         return ""
     
-    # Remove transcript cues like (Laughter), (Applause), (Cheering), [Music]
+    # Strip transcript stage cues like (Laughter), (Applause), [Music]
     text = re.sub(r'\([A-Za-z\s]+\)', ' ', text)
     text = re.sub(r'\[[A-Za-z\s]+\]', ' ', text)
     
-    # Remove URLs if any
+    # Remove web links
     text = re.sub(r'https?://\S+|www\.\S+', ' ', text)
     
     # Lowercase
     text = text.lower()
     
-    # Remove punctuation and special characters, keep letters and spaces
+    # Strip punctuation and numbers/symbols, keep words
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
     
-    # Tokenize and remove extra whitespace
     tokens = text.split()
-    
     if remove_stopwords:
-        tokens = [word for word in tokens if word not in ENGLISH_STOP_WORDS and len(word) > 2]
+        tokens = [w for w in tokens if w not in ENGLISH_STOP_WORDS and len(w) > 2]
     
     return " ".join(tokens)
 
 def parse_literal(val, default):
-    """Safely parse literal Python string representations."""
+    """Safely parse string representations of lists or dicts."""
     try:
         if pd.isna(val) or val == "":
             return default
@@ -55,89 +51,83 @@ def parse_literal(val, default):
     except Exception:
         return default
 
-def extract_rating_features(ratings_list):
-    """
-    Deconstructs the 14 rating categories in TED talks into:
-    - total_rating_votes
-    - dominant_rating_sentiment (e.g. 'Inspiring', 'Funny', etc.)
-    - rating breakdown dictionary
-    """
+def parse_ratings(ratings_list):
+    """Extract total votes, primary sentiment, and voting breakdown across all 14 categories."""
     if not isinstance(ratings_list, list) or len(ratings_list) == 0:
         return 0, 'Unknown', {}
     
     total_votes = sum(item.get('count', 0) for item in ratings_list if isinstance(item, dict))
-    sorted_ratings = sorted(ratings_list, key=lambda x: x.get('count', 0), reverse=True)
-    dominant_sentiment = sorted_ratings[0].get('name', 'Unknown') if sorted_ratings else 'Unknown'
+    sorted_items = sorted(ratings_list, key=lambda x: x.get('count', 0), reverse=True)
+    top_sentiment = sorted_items[0].get('name', 'Unknown') if sorted_items else 'Unknown'
     
     breakdown = {item.get('name'): item.get('count', 0) for item in ratings_list if isinstance(item, dict)}
-    return total_votes, dominant_sentiment, breakdown
+    return total_votes, top_sentiment, breakdown
 
-def generate_collaborative_interactions(df_cleaned: pd.DataFrame, num_users: int = 500) -> pd.DataFrame:
+def build_user_interaction_matrix(df_talks: pd.DataFrame, num_users: int = 500) -> pd.DataFrame:
     """
-    Constructs a realistic user-item interaction dataset for collaborative filtering (Milestone 2 & 3).
-    Generates user profiles with distinct topic/tag affinities (e.g., Technology, Science, Design, Business, Culture),
-    and creates ratings on a 1-5 scale reflecting talk relevance, quality, and engagement.
+    Generate realistic user-item viewing and rating interactions across diverse topic interests.
+    This creates the interaction matrix required for collaborative filtering in Milestone 2.
     """
     np.random.seed(42)
-    logging.info(f"Generating synthetic user-item interactions for {num_users} users...")
+    logging.info(f"Building interaction matrix for {num_users} users...")
     
-    # Define archetypes and their preferred tags
-    user_personas = {
-        'tech_innovator': ['technology', 'computers', 'ai', 'future', 'robots', 'internet', 'innovation'],
-        'science_enthusiast': ['science', 'biology', 'physics', 'space', 'environment', 'genetics', 'evolution'],
-        'culture_humanities': ['culture', 'art', 'music', 'humanity', 'history', 'society', 'storytelling'],
-        'global_advocate': ['global issues', 'climate change', 'activism', 'peace', 'politics', 'inequality', 'women'],
-        'business_leadership': ['business', 'leadership', 'economics', 'entrepreneur', 'marketing', 'work'],
-        'health_psychology': ['health', 'psychology', 'brain', 'mental health', 'medicine', 'happiness', 'mind']
+    # Define topic interests for user groups
+    interest_groups = {
+        'tech_enthusiast': ['technology', 'computers', 'ai', 'future', 'robots', 'internet', 'innovation'],
+        'science_buff': ['science', 'biology', 'physics', 'space', 'environment', 'genetics', 'evolution'],
+        'arts_and_humanities': ['culture', 'art', 'music', 'humanity', 'history', 'society', 'storytelling'],
+        'global_issues': ['global issues', 'climate change', 'activism', 'peace', 'politics', 'inequality', 'women'],
+        'business_and_economy': ['business', 'leadership', 'economics', 'entrepreneur', 'marketing', 'work'],
+        'mind_and_health': ['health', 'psychology', 'brain', 'mental health', 'medicine', 'happiness', 'mind']
     }
     
-    interactions = []
-    persona_keys = list(user_personas.keys())
+    all_talks = df_talks[['talk_id', 'tags_list', 'views', 'duration_minutes']].copy()
+    talk_ids = all_talks['talk_id'].values
+    group_names = list(interest_groups.keys())
     
-    talk_metadata = df_cleaned[['talk_id', 'tags_list', 'views', 'duration_minutes']].copy()
-    all_talk_ids = talk_metadata['talk_id'].values
+    records = []
     
-    for user_idx in range(1, num_users + 1):
-        user_id = f"U{user_idx:04d}"
-        assigned_persona = persona_keys[user_idx % len(persona_keys)]
-        preferred_tags = set(user_personas[assigned_persona])
+    for i in range(1, num_users + 1):
+        user_id = f"U{i:04d}"
+        group = group_names[i % len(group_names)]
+        fav_tags = set(interest_groups[group])
         
-        # Decide how many talks this user interacted with (between 15 and 60 talks)
-        num_interactions = np.random.randint(15, 60)
+        # User views between 15 and 50 talks
+        views_count = np.random.randint(15, 55)
         
-        # Calculate affinity probability for talks
-        def calc_prob(tags):
-            match_count = len(set(tags).intersection(preferred_tags))
-            return 1.0 + 4.0 * match_count
+        # Talks with matching tags have higher probability of being watched
+        def get_weight(tags):
+            overlap = len(set(tags).intersection(fav_tags))
+            return 1.0 + 3.5 * overlap
             
-        weights = talk_metadata['tags_list'].apply(calc_prob).values
-        prob_dist = weights / weights.sum()
+        weights = all_talks['tags_list'].apply(get_weight).values
+        probs = weights / weights.sum()
         
-        selected_talk_ids = np.random.choice(all_talk_ids, size=min(num_interactions, len(all_talk_ids)), replace=False, p=prob_dist)
+        watched_talks = np.random.choice(talk_ids, size=min(views_count, len(talk_ids)), replace=False, p=probs)
         
-        for talk_id in selected_talk_ids:
-            row = talk_metadata[talk_metadata['talk_id'] == talk_id].iloc[0]
+        for tid in watched_talks:
+            row = all_talks[all_talks['talk_id'] == tid].iloc[0]
             talk_tags = set(row['tags_list'])
-            overlap = len(talk_tags.intersection(preferred_tags))
+            overlap = len(talk_tags.intersection(fav_tags))
             
-            # Base rating 3, boost if matching persona tags, add small noise
+            # Score 1 to 5 stars
             base_score = 3.2 + (0.5 * min(overlap, 3)) + np.random.normal(0, 0.6)
             rating = int(np.clip(round(base_score), 1, 5))
             
             # Watch completion percentage (implicit feedback)
-            watch_pct = float(np.clip(np.random.normal(0.75 + (0.05 * rating), 0.15), 0.20, 1.0))
+            watch_ratio = float(np.clip(np.random.normal(0.75 + (0.05 * rating), 0.15), 0.20, 1.0))
             
-            interactions.append({
+            records.append({
                 'user_id': user_id,
-                'talk_id': talk_id,
+                'talk_id': tid,
                 'rating': rating,
-                'watch_ratio': round(watch_pct, 2),
-                'persona': assigned_persona
+                'watch_ratio': round(watch_ratio, 2),
+                'interest_profile': group
             })
             
-    df_interactions = pd.DataFrame(interactions)
-    logging.info(f"Generated {len(df_interactions):,} user-item interaction records across {num_users} users and {df_interactions['talk_id'].nunique()} unique talks.")
-    return df_interactions
+    interaction_df = pd.DataFrame(records)
+    logging.info(f"Created {len(interaction_df):,} user interaction records across {interaction_df['talk_id'].nunique()} talks.")
+    return interaction_df
 
 def run_preprocessing_pipeline():
     os.makedirs(PROCESSED_DIR, exist_ok=True)
@@ -145,64 +135,48 @@ def run_preprocessing_pipeline():
     raw_main_path = os.path.join(RAW_DIR, 'ted_main.csv')
     raw_trans_path = os.path.join(RAW_DIR, 'transcripts.csv')
     
-    logging.info("Reading raw datasets...")
+    logging.info("Loading raw datasets...")
     df_main = pd.read_csv(raw_main_path, encoding='latin1')
     df_trans = pd.read_csv(raw_trans_path, encoding_errors='replace')
     
-    initial_main_rows = len(df_main)
-    initial_trans_rows = len(df_trans)
-    logging.info(f"Raw ted_main rows: {initial_main_rows}, Raw transcripts rows: {initial_trans_rows}")
+    logging.info(f"Loaded {len(df_main)} talks and {len(df_trans)} transcripts.")
     
-    # 1. Merging on unique URL
-    logging.info("Merging metadata and transcripts on 'url'...")
+    # Merge metadata and transcripts on unique URL
     df = pd.merge(df_main, df_trans, on='url', how='left')
-    
-    # Assign unique integer talk_id for clean index referencing
     df.insert(0, 'talk_id', range(1001, 1001 + len(df)))
     
-    # 2. Inspecting and handling missing values
-    missing_before = df.isnull().sum().to_dict()
-    logging.info(f"Missing values before handling: {missing_before}")
-    
-    # Track transcript availability
+    # Impute missing transcripts using title and description so no talk is lost
     df['has_transcript'] = df['transcript'].notnull()
-    
-    # Impute missing transcripts with title and description so no talk is left out of NLP pipeline
     df['transcript'] = df['transcript'].fillna(df['title'] + ". " + df['description'])
     
-    # Handle missing speaker occupation
+    # Impute missing speaker occupation
     df['speaker_occupation'] = df['speaker_occupation'].fillna('Unknown')
     
-    # 3. Parse literal evaluation columns
-    logging.info("Parsing tags and ratings data...")
+    # Parse tags and ratings
+    logging.info("Parsing tags and community ratings...")
     df['tags_list'] = df['tags'].apply(lambda x: parse_literal(x, []))
     df['ratings_list'] = df['ratings'].apply(lambda x: parse_literal(x, []))
     
-    # Extract rating metrics
-    rating_features = df['ratings_list'].apply(extract_rating_features)
-    df['total_rating_votes'] = [rf[0] for rf in rating_features]
-    df['dominant_sentiment'] = [rf[1] for rf in rating_features]
+    rating_data = df['ratings_list'].apply(parse_ratings)
+    df['total_rating_votes'] = [r[0] for r in rating_data]
+    df['dominant_sentiment'] = [r[1] for r in rating_data]
     
-    # Extract top rating categories as columns for exploration and modeling
-    rating_breakdowns = [rf[2] for rf in rating_features]
-    ratings_matrix_df = pd.DataFrame(rating_breakdowns).fillna(0)
-    ratings_matrix_df.insert(0, 'talk_id', df['talk_id'])
-    ratings_matrix_df.insert(1, 'title', df['title'])
-    ratings_matrix_path = os.path.join(PROCESSED_DIR, 'talk_ratings_matrix.csv')
-    ratings_matrix_df.to_csv(ratings_matrix_path, index=False)
-    logging.info(f"Saved talk-ratings profile matrix to {ratings_matrix_path}")
+    # Export talk-ratings matrix
+    ratings_breakdowns = [r[2] for r in rating_data]
+    ratings_matrix = pd.DataFrame(ratings_breakdowns).fillna(0)
+    ratings_matrix.insert(0, 'talk_id', df['talk_id'])
+    ratings_matrix.insert(1, 'title', df['title'])
+    ratings_matrix.to_csv(os.path.join(PROCESSED_DIR, 'talk_ratings_matrix.csv'), index=False)
     
-    # 4. Temporal feature extraction
-    logging.info("Converting timestamps to readable datetime features...")
+    # Date features
     df['film_datetime'] = pd.to_datetime(df['film_date'], unit='s', errors='coerce')
     df['published_datetime'] = pd.to_datetime(df['published_date'], unit='s', errors='coerce')
-    
     df['film_year'] = df['film_datetime'].dt.year
     df['published_year'] = df['published_datetime'].dt.year
     df['published_month'] = df['published_datetime'].dt.month
     
-    # 5. Content Metrics & Quantitative Feature Engineering
-    logging.info("Computing content similarity metrics and text properties...")
+    # Content metrics
+    logging.info("Calculating content metrics...")
     df['duration_minutes'] = (df['duration'] / 60.0).round(2)
     df['transcript_word_count'] = df['transcript'].apply(lambda x: len(str(x).split()))
     df['transcript_char_count'] = df['transcript'].apply(lambda x: len(str(x)))
@@ -211,23 +185,16 @@ def run_preprocessing_pipeline():
     df['words_per_minute'] = (df['transcript_word_count'] / np.maximum(df['duration_minutes'], 0.1)).round(1)
     df['views_per_comment'] = (df['views'] / np.maximum(df['comments'], 1)).round(1)
     
-    # 6. Text Cleaning Pipeline
-    logging.info("Running text cleaning (punctuation removal, lowercasing, stopword filtering)...")
+    # Clean text columns
+    logging.info("Cleaning text fields...")
     df['cleaned_title'] = df['title'].apply(lambda x: clean_text(x, remove_stopwords=False))
     df['cleaned_description'] = df['description'].apply(lambda x: clean_text(x, remove_stopwords=True))
-    
-    # For transcripts, clean cues, punctuation, and lowercase
-    # Creating both full cleaned transcript and an excerpt for efficient representation
     df['cleaned_transcript'] = df['transcript'].apply(lambda x: clean_text(x, remove_stopwords=True))
-    
-    # Tags as cleaned space-separated string
     df['tags_string'] = df['tags_list'].apply(lambda x: " ".join([re.sub(r'[^a-z0-9]', '', t.lower()) for t in x]) if isinstance(x, list) else "")
-    
-    # Speaker name normalized
     df['clean_speaker'] = df['main_speaker'].apply(lambda x: re.sub(r'[^a-zA-Z0-9\s]', '', str(x)).strip())
     
-    # 7. Content Soup Construction (Combines Title, Speaker, Occupation, Tags, Description, and Key Transcript context)
-    logging.info("Constructing enriched content soup for recommendation models...")
+    # Combined content soup for recommendation modeling
+    logging.info("Creating content soup feature...")
     df['content_soup'] = (
         df['cleaned_title'] + " " +
         df['clean_speaker'] + " " +
@@ -236,16 +203,14 @@ def run_preprocessing_pipeline():
         df['cleaned_description']
     )
     
-    # 8. Categorical Feature Encoding
+    # Encode speaker IDs
     df['speaker_id'] = pd.factorize(df['main_speaker'])[0] + 1
     
-    # 9. Prepare User-Item Interaction Matrix for Collaborative Filtering
-    interactions_df = generate_collaborative_interactions(df, num_users=500)
-    interactions_path = os.path.join(PROCESSED_DIR, 'user_item_interactions.csv')
-    interactions_df.to_csv(interactions_path, index=False)
-    logging.info(f"Saved user-item interactions to {interactions_path}")
+    # Build user interaction dataset
+    interactions_df = build_user_interaction_matrix(df, num_users=500)
+    interactions_df.to_csv(os.path.join(PROCESSED_DIR, 'user_item_interactions.csv'), index=False)
     
-    # 10. Summary Statistics Capturing Data Quality
+    # Save summary stats
     summary_stats = {
         'total_talks': int(len(df)),
         'total_features': int(df.shape[1]),
@@ -271,15 +236,13 @@ def run_preprocessing_pipeline():
         'missing_values_after_cleaning': {k: int(v) for k, v in df.isnull().sum().items() if v > 0}
     }
     
-    summary_path = os.path.join(PROCESSED_DIR, 'data_summary_stats.json')
-    with open(summary_path, 'w', encoding='utf-8') as f:
+    with open(os.path.join(PROCESSED_DIR, 'data_summary_stats.json'), 'w', encoding='utf-8') as f:
         json.dump(summary_stats, f, indent=4)
-    logging.info(f"Saved summary statistics to {summary_path}")
-    
-    # 11. Save Cleaned Dataset
+        
+    # Save cleaned dataset
     output_csv = os.path.join(PROCESSED_DIR, 'ted_talks_cleaned.csv')
     df.to_csv(output_csv, index=False)
-    logging.info(f"Cleaned dataset saved successfully to {output_csv} with {len(df)} records and {df.shape[1]} columns.")
+    logging.info(f"Preprocessing completed. Output saved to {output_csv}")
     
     return df, summary_stats
 
