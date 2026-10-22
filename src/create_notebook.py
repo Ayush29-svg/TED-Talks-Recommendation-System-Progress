@@ -1,0 +1,213 @@
+import json
+import os
+
+notebook_dir = r"C:\Drivers\notebooks"
+os.makedirs(notebook_dir, exist_ok=True)
+notebook_path = os.path.join(notebook_dir, "Milestone_1_EDA_and_Preprocessing.ipynb")
+
+cells = [
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "# Personalized TED Talks Recommendation System\n",
+            "## Milestone 1: Week 1-2 Implementation\n",
+            "### Module 1: Data Collection & Module 2: Data Exploration and Data Preprocessing\n",
+            "\n",
+            "**Author:** Data Science Intern / SpringBoard Program  \n",
+            "**Goal:** Build a robust data ingestion, text preprocessing, and exploratory analysis pipeline for TED Talks recommendations."
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 1. Project Background and Module Objectives\n",
+            "This notebook implements the foundational data architecture for a hybrid recommender system:\n",
+            "- **Module 1 (Data Collection):** Collects canonical TED Talk metadata and full transcripts.\n",
+            "- **Module 2 (Data Exploration & Preprocessing):** Inspects completeness, resolves missing values, performs text normalization, engineers content similarity metrics, visualizes distributions, and formats collaborative user-item matrices."
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 1,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "import os\n",
+            "import re\n",
+            "import ast\n",
+            "import json\n",
+            "import numpy as np\n",
+            "import pandas as pd\n",
+            "import matplotlib.pyplot as plt\n",
+            "import seaborn as sns\n",
+            "from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS\n",
+            "\n",
+            "%matplotlib inline\n",
+            "sns.set_theme(style='whitegrid')\n",
+            "print('Environment and libraries initialized successfully.')"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 2. Module 1: Data Ingestion & Audit\n",
+            "We load the downloaded datasets:\n",
+            "1. `ted_main.csv`: Metadata for 2,628 talks including titles, speakers, duration, views, tags, ratings, and events.\n",
+            "2. `transcripts.csv`: Verbatim transcripts for talks."
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 2,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "df_main = pd.read_csv('../data/raw/ted_main.csv', encoding='latin1')\n",
+            "df_trans = pd.read_csv('../data/raw/transcripts.csv', encoding_errors='replace')\n",
+            "\n",
+            "print(f'Metadata shape: {df_main.shape}')\n",
+            "print(f'Transcripts shape: {df_trans.shape}')\n",
+            "df_main.head(3)"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 3. Module 2: Data Preprocessing & Merging\n",
+            "We perform:\n",
+            "- Merging on talk URL\n",
+            "- Imputation of missing transcripts (86 talks imputed with title + description)\n",
+            "- Handling missing `speaker_occupation`\n",
+            "- Parsing stringified Python literals (`tags`, `ratings`)"
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 3,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "df_cleaned = pd.read_csv('../data/processed/ted_talks_cleaned.csv')\n",
+            "print('Cleaned dataset shape:', df_cleaned.shape)\n",
+            "print('Null values across all 43 columns:')\n",
+            "print(df_cleaned.isnull().sum()[df_cleaned.isnull().sum() > 0])"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 4. Text Normalization Pipeline & Content Soup\n",
+            "To prepare for TF-IDF and embedding models in Milestone 2, we execute:\n",
+            "- Lowercasing\n",
+            "- Stripping transcript cues (e.g., `(Laughter)`, `(Applause)`)\n",
+            "- Removing punctuation and non-alphanumeric tokens\n",
+            "- Removing stopwords\n",
+            "- Generating an aggregated `content_soup` feature combining title, speaker, tags, occupation, and description"
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 4,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "sample_idx = 0\n",
+            "print('--- Original Title ---')\n",
+            "print(df_cleaned['title'].iloc[sample_idx])\n",
+            "print('\\n--- Original Tags ---')\n",
+            "print(df_cleaned['tags_list'].iloc[sample_idx])\n",
+            "print('\\n--- Engineered Content Soup ---')\n",
+            "print(df_cleaned['content_soup'].iloc[sample_idx][:300] + '...')"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 5. Exploratory Data Analysis & Visualizations\n",
+            "Let's review the key distributions: talk duration, top topic tags, views/comments, and speaking rates."
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 5,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "plt.figure(figsize=(10, 5))\n",
+            "sns.histplot(df_cleaned['duration_minutes'], bins=40, kde=True, color='#e62b1e')\n",
+            "plt.axvline(df_cleaned['duration_minutes'].mean(), color='black', linestyle='--', label=f\"Mean: {df_cleaned['duration_minutes'].mean():.1f}m\")\n",
+            "plt.axvline(df_cleaned['duration_minutes'].median(), color='green', linestyle='-', label=f\"Median: {df_cleaned['duration_minutes'].median():.1f}m\")\n",
+            "plt.title('Talk Duration Distribution (Minutes)')\n",
+            "plt.legend()\n",
+            "plt.show()"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 6. Collaborative Filtering Setup (User-Item Interaction Matrix)\n",
+            "To support collaborative filtering in Milestones 2 & 3, we constructed a realistic user-item interaction benchmark spanning 500 diverse user profiles and 18,323 interactions."
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 6,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "df_interactions = pd.read_csv('../data/processed/user_item_interactions.csv')\n",
+            "print(f'Total interactions: {len(df_interactions):,}')\n",
+            "print(f'Unique users: {df_interactions[\"user_id\"].nunique()}')\n",
+            "print(f'Unique talks: {df_interactions[\"talk_id\"].nunique()}')\n",
+            "df_interactions.head()"
+        ]
+    },
+    {
+        "cell_type": "markdown",
+        "metadata": {},
+        "source": [
+            "### 7. Summary of Data Quality Metrics\n",
+            "Summary statistics capturing data richness, completeness, and distributions:"
+        ]
+    },
+    {
+        "cell_type": "code",
+        "execution_count": 7,
+        "metadata": {},
+        "outputs": [],
+        "source": [
+            "with open('../data/processed/data_summary_stats.json') as f:\n",
+            "    stats = json.load(f)\n",
+            "pd.Series(stats)"
+        ]
+    }
+]
+
+notebook = {
+    "cells": cells,
+    "metadata": {
+        "kernelspec": {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3"
+        },
+        "language_info": {
+            "name": "python",
+            "version": "3.14.0"
+        }
+    },
+    "nbformat": 4,
+    "nbformat_minor": 4
+}
+
+with open(notebook_path, "w", encoding="utf-8") as f:
+    json.dump(notebook, f, indent=2)
+
+print(f"Generated notebook at {notebook_path}")
